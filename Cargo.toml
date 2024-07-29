@@ -1,0 +1,17 @@
+[package]
+name = "discord-purger"
+description = "Removes all of your discord messages from a given channel."
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/AidenHadisi/discord-purger"
+license = "MIT"
+keywords = ["discord"]
+publish = false
+authors = ["Aiden Hadisi"]
+
+[dependencies]
+dotenv = "0.15"
+futures = "0.3.30"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
