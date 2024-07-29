@@ -47,6 +47,7 @@ async fn delete_messages(
     let client = &Client::new();
     let auth_header = format!("Bot {}", token);
 
+    let mut last_message_id: Option<String> = None;
     loop {
         let url = format!(
             "https://discord.com/api/v9/channels/{}/messages",
@@ -57,6 +58,7 @@ async fn delete_messages(
             .get(&url)
             .header(header::AUTHORIZATION, &auth_header)
             .query(&[("limit", "100")])
+            .query(&[("before", last_message_id.as_deref().unwrap_or_default())])
             .send()
             .await?;
 
@@ -68,6 +70,7 @@ async fn delete_messages(
                 return Err(format!("HTTP error {}: {}", status, text).into());
             }
         };
+        last_message_id = messages.last().map(|message| message.id.clone());
 
         let messages_to_delete: Vec<_> = messages
             .into_iter()
@@ -97,7 +100,7 @@ async fn delete_messages(
             })
             .await;
 
-        time::sleep(tokio::time::Duration::from_secs(5)).await;
+        time::sleep(time::Duration::from_secs(5)).await;
     }
 
     Ok(())
