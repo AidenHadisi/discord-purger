@@ -45,7 +45,6 @@ async fn delete_messages(
     channel_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = &Client::new();
-    let auth_header = format!("Bot {}", token);
 
     let mut last_message_id: Option<String> = None;
     loop {
@@ -54,13 +53,16 @@ async fn delete_messages(
             channel_id
         );
 
-        let response = client
+        let mut request = client
             .get(&url)
-            .header(header::AUTHORIZATION, &auth_header)
-            .query(&[("limit", "100")])
-            .query(&[("before", last_message_id.as_deref().unwrap_or_default())])
-            .send()
-            .await?;
+            .header(header::AUTHORIZATION, token)
+            .query(&[("limit", "100")]);
+
+        if let Some(ref id) = last_message_id {
+            request = request.query(&[("before", id)]);
+        }
+
+        let response = request.send().await?;
 
         let messages: Vec<Message> = match response.status() {
             StatusCode::OK => response.json().await?,
@@ -70,8 +72,8 @@ async fn delete_messages(
                 return Err(format!("HTTP error {}: {}", status, text).into());
             }
         };
-        last_message_id = messages.last().map(|message| message.id.clone());
 
+        last_message_id = messages.last().map(|message| message.id.clone());
         let messages_to_delete: Vec<_> = messages
             .into_iter()
             .filter(|message| message.author.id == user_id)
@@ -82,21 +84,34 @@ async fn delete_messages(
         }
 
         stream::iter(messages_to_delete)
-            .for_each_concurrent(10, |message| async move {
+            .for_each_concurrent(2, |message| async move {
                 let url = format!(
                     "https://discord.com/api/v9/channels/{}/messages/{}",
                     channel_id, message.id
                 );
-                let res = client
-                    .delete(&url)
-                    .header("Authorization", format!("Bot {}", token))
-                    .send()
-                    .await;
 
-                match res {
-                    Ok(_) => println!("Message {} deleted.", message.id),
-                    Err(e) => eprintln!("An error occurred: {}", e),
+                match client
+                    .delete(&url)
+                    .header(header::AUTHORIZATION, token)
+                    .send()
+                    .await
+                {
+                    Ok(e) if e.status() == StatusCode::NO_CONTENT => {
+                        println!("Deleted message {}", message.id);
+                    }
+                    Ok(e) => {
+                        println!(
+                            "Failed to delete message {}: {}",
+                            message.id,
+                            e.text().await.unwrap()
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to delete message: {}", err);
+                    }
                 }
+
+                time::sleep(time::Duration::from_secs(1)).await;
             })
             .await;
 
