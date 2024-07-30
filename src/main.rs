@@ -73,15 +73,15 @@ async fn delete_messages(
             }
         };
 
+        if messages.is_empty() {
+            break;
+        }
+
         last_message_id = messages.last().map(|message| message.id.clone());
         let messages_to_delete: Vec<_> = messages
             .into_iter()
             .filter(|message| message.author.id == user_id)
             .collect();
-
-        if messages_to_delete.is_empty() {
-            break;
-        }
 
         stream::iter(messages_to_delete)
             .for_each_concurrent(2, |message| async move {
