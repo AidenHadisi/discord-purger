@@ -45,34 +45,11 @@ async fn delete_messages(
     channel_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = &Client::new();
-
     let mut last_message_id: Option<String> = None;
-    loop {
-        let url = format!(
-            "https://discord.com/api/v9/channels/{}/messages",
-            channel_id
-        );
 
-        let mut request = client
-            .get(&url)
-            .header(header::AUTHORIZATION, token)
-            .query(&[("limit", "100")]);
-
-        if let Some(ref id) = last_message_id {
-            request = request.query(&[("before", id)]);
-        }
-
-        let response = request.send().await?;
-
-        let messages: Vec<Message> = match response.status() {
-            StatusCode::OK => response.json().await?,
-            _ => {
-                let status = response.status();
-                let text = response.text().await?;
-                return Err(format!("HTTP error {}: {}", status, text).into());
-            }
-        };
-
+    while let Ok(ref messages) =
+        fetch_messages(client, token, channel_id, last_message_id.clone()).await
+    {
         if messages.is_empty() {
             break;
         }
@@ -111,12 +88,39 @@ async fn delete_messages(
                     }
                 }
 
-                time::sleep(time::Duration::from_secs(1)).await;
+                time::sleep(time::Duration::from_secs(2)).await;
             })
             .await;
 
-        time::sleep(time::Duration::from_secs(5)).await;
+        time::sleep(time::Duration::from_secs(1)).await;
     }
 
     Ok(())
+}
+
+async fn fetch_messages(
+    client: &Client,
+    token: &str,
+    channel_id: &str,
+    last_message_id: Option<String>,
+) -> Result<Vec<Message>, Box<dyn std::error::Error>> {
+    let url = format!("https://discord.com/api/v9/channels/{channel_id}/messages");
+
+    let response = client
+        .get(&url)
+        .header(header::AUTHORIZATION, token)
+        .query(
+            &[("limit", "100")]
+                .into_iter()
+                .chain(last_message_id.as_ref().map(|id| ("before", id.as_str())))
+                .collect::<Vec<_>>(),
+        )
+        // .query(&last_message_id.map(|id| [("before", id)]))
+        .send()
+        .await?;
+
+    match response.status() {
+        StatusCode::OK => response.json().await.map_err(Into::into),
+        status => Err(format!("HTTP error {}: {}", status, response.text().await?).into()),
+    }
 }
